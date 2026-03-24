@@ -83,13 +83,17 @@ class FracturePredictor:
 
         # Resolve Grad-CAM target layer: last conv block of the backbone
         self._target_layer = None
+        print(f"[predictor] grad-cam available: {_GRADCAM_AVAILABLE}")
+        print(f"[predictor] backbone type: {type(self.model.backbone).__name__}")
+        print(f"[predictor] has blocks: {hasattr(self.model.backbone, 'blocks')}")
         if _GRADCAM_AVAILABLE and hasattr(self.model.backbone, "blocks"):
             last_stage = self.model.backbone.blocks[-1]
-            # EfficientNetV2: blocks[-1] is a Sequential of sub-blocks → take last
+            print(f"[predictor] last_stage type: {type(last_stage).__name__}")
             if hasattr(last_stage, "__getitem__"):
                 self._target_layer = [last_stage[-1]]
             else:
                 self._target_layer = [last_stage]
+        print(f"[predictor] target_layer: {self._target_layer}")
 
         print(f"[predictor] Model loaded from {best_ckpt}  device={DEVICE}")
 
@@ -145,8 +149,11 @@ class FracturePredictor:
         if not _GRADCAM_AVAILABLE or self._target_layer is None:
             return ""
 
+        print(f"[predictor] running Grad-CAM, target_layer={self._target_layer}")
         try:
-            return self._run_gradcam(image_bytes)
+            result = self._run_gradcam(image_bytes)
+            print(f"[predictor] Grad-CAM result length: {len(result)}")
+            return result
         except Exception as e:
             import traceback
             print(f"[predictor] Grad-CAM failed: {e}")
