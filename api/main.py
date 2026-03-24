@@ -13,7 +13,6 @@ Start:
 
 import json
 import sys
-from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import List
 
@@ -32,22 +31,12 @@ from predictor import FracturePredictor
 from schemas import HealthResponse, PredictionResponse
 
 
-# ── Lifespan: load model once at startup ──────────────────────────────────────
-
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    pred_module.predictor = FracturePredictor()
-    yield
-    pred_module.predictor = None
-
-
 # ── App ───────────────────────────────────────────────────────────────────────
 
 app = FastAPI(
     title="Fracture Detection API",
     description="EfficientNetV2-M binary classifier for forearm fractures",
     version="1.0.0",
-    lifespan=lifespan,
 )
 
 app.add_middleware(
@@ -62,8 +51,9 @@ app.add_middleware(
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 def _get_predictor() -> FracturePredictor:
+    # Lazy loading: Modell wird beim ersten Request geladen (nicht beim Start)
     if pred_module.predictor is None:
-        raise HTTPException(status_code=503, detail="Model not loaded")
+        pred_module.predictor = FracturePredictor()
     return pred_module.predictor
 
 
