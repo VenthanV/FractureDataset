@@ -4,7 +4,7 @@ WORKDIR /app
 
 # Systemlibs für OpenCV (grad-cam dependency)
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    libglib2.0-0 libgl1-mesa-glx && \
+    libglib2.0-0 libgl1 && \
     rm -rf /var/lib/apt/lists/*
 
 # CPU-only PyTorch (kein conda, kein Konflikt)
