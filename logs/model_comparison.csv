@@ -1,0 +1,7 @@
+model,params_M,val_auc,val_acc,time_s,error
+efficientnet_b0,4.3,0.7403,0.675,690.0,
+efficientnet_b2,8.1,0.7624,0.6625,754.0,
+densenet121,7.2,0.7748,0.7042,869.0,
+convnext_tiny,28.0,0.7875,0.7021,799.0,
+resnet50,24.0,0.725,0.6396,835.0,
+inception_v3,22.3,0.7309,0.6604,527.0,

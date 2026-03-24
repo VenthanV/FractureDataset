@@ -1,0 +1,30 @@
+# ── Python ──────────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.egg-info/
+.env
+.venv/
+venv/
+
+# ── Model Checkpoints (groß, von Kaggle runterladen) ────────────────────────
+checkpoints/*.pth
+checkpoints/*.pt
+
+# ── Generierte Logs & Plots (mit evaluate.py neu generieren) ────────────────
+logs/*.png
+logs/train_log.csv
+# NICHT ignoriert: logs/eval_results.json, logs/model_comparison.csv
+
+# ── Frontend ────────────────────────────────────────────────────────────────
+frontend/node_modules/
+frontend/dist/
+frontend/.DS_Store
+frontend/src/.DS_Store
+
+# ── IDE / OS ─────────────────────────────────────────────────────────────────
+.DS_Store
+.idea/
+.vscode/
+
+# ── Jupyter ──────────────────────────────────────────────────────────────────
+.ipynb_checkpoints/
