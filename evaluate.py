@@ -167,7 +167,7 @@ def main() -> None:
         action="store_true",
         help="Save all metrics to logs/eval_results.json (read by /model/stats API endpoint)",
     )
-    args = parser.parse_args()
+    args, _ = parser.parse_known_args()
 
     print(f"Device: {DEVICE}")
 
