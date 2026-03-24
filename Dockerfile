@@ -1,16 +1,20 @@
-FROM pytorch/pytorch:2.1.2-cuda11.8-cudnn8-runtime
+FROM python:3.11-slim
 
 WORKDIR /app
 
-# Nur die leichten Abhängigkeiten installieren (torch ist bereits im Base-Image)
-RUN pip install --no-cache-dir "numpy<2" && \
-    pip install --no-cache-dir \
+# CPU-only PyTorch (kein conda, kein Konflikt)
+RUN pip install --no-cache-dir \
+    torch==2.1.2 torchvision==0.16.2 \
+    --index-url https://download.pytorch.org/whl/cpu
+
+# Übrige Abhängigkeiten
+RUN pip install --no-cache-dir \
     fastapi>=0.111.0 \
     uvicorn[standard]>=0.29.0 \
     python-multipart>=0.0.9 \
     Pillow>=10.0.0 \
+    "numpy>=1.24,<2" \
     timm>=0.9.0 \
-    torchvision>=0.17.0 \
     grad-cam>=1.5.0 \
     huggingface_hub>=0.20.0
 
