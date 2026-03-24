@@ -2,6 +2,11 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
+# Systemlibs für OpenCV (grad-cam dependency)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libglib2.0-0 libgl1-mesa-glx && \
+    rm -rf /var/lib/apt/lists/*
+
 # CPU-only PyTorch (kein conda, kein Konflikt)
 RUN pip install --no-cache-dir \
     torch==2.1.2 torchvision==0.16.2 \
@@ -15,6 +20,7 @@ RUN pip install --no-cache-dir \
     Pillow>=10.0.0 \
     "numpy>=1.24,<2" \
     timm>=0.9.0 \
+    opencv-python-headless>=4.8.0 \
     grad-cam>=1.5.0 \
     huggingface_hub>=0.20.0
 
