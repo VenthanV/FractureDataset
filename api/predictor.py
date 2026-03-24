@@ -148,7 +148,9 @@ class FracturePredictor:
         try:
             return self._run_gradcam(image_bytes)
         except Exception as e:
+            import traceback
             print(f"[predictor] Grad-CAM failed: {e}")
+            traceback.print_exc()
             return ""
 
     def _run_gradcam(self, image_bytes: bytes) -> str:
