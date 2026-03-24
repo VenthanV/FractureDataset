@@ -3,12 +3,12 @@ FROM pytorch/pytorch:2.1.2-cuda11.8-cudnn8-runtime
 WORKDIR /app
 
 # Nur die leichten Abhängigkeiten installieren (torch ist bereits im Base-Image)
-RUN pip install --no-cache-dir \
+RUN pip install --no-cache-dir "numpy<2" && \
+    pip install --no-cache-dir \
     fastapi>=0.111.0 \
     uvicorn[standard]>=0.29.0 \
     python-multipart>=0.0.9 \
     Pillow>=10.0.0 \
-    numpy>=1.24.0 \
     timm>=0.9.0 \
     torchvision>=0.17.0 \
     grad-cam>=1.5.0 \
