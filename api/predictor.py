@@ -81,11 +81,15 @@ class FracturePredictor:
         self.device     = DEVICE
         self.model_name = MODEL_NAME
 
-        # Resolve Grad-CAM target layer: last block group of the backbone
+        # Resolve Grad-CAM target layer: last conv block of the backbone
+        self._target_layer = None
         if _GRADCAM_AVAILABLE and hasattr(self.model.backbone, "blocks"):
-            self._target_layer = [self.model.backbone.blocks[-1]]
-        else:
-            self._target_layer = None
+            last_stage = self.model.backbone.blocks[-1]
+            # EfficientNetV2: blocks[-1] is a Sequential of sub-blocks → take last
+            if hasattr(last_stage, "__getitem__"):
+                self._target_layer = [last_stage[-1]]
+            else:
+                self._target_layer = [last_stage]
 
         print(f"[predictor] Model loaded from {best_ckpt}  device={DEVICE}")
 
@@ -141,6 +145,13 @@ class FracturePredictor:
         if not _GRADCAM_AVAILABLE or self._target_layer is None:
             return ""
 
+        try:
+            return self._run_gradcam(image_bytes)
+        except Exception as e:
+            print(f"[predictor] Grad-CAM failed: {e}")
+            return ""
+
+    def _run_gradcam(self, image_bytes: bytes) -> str:
         tensor = self._preprocess(image_bytes)  # (1, 3, H, W)
 
         # Build a numpy RGB image for the overlay (unnormalised, 0-1 range)
