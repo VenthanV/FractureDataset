@@ -7,7 +7,7 @@ services:
     buildCommand: >
       pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu --quiet &&
       pip install -r api/requirements.txt
-    startCommand: bash -c "cd api && uvicorn main:app --host 0.0.0.0 --port $PORT"
+    startCommand: python -m uvicorn api.main:app --host 0.0.0.0 --port $PORT
     envVars:
       - key: HF_REPO_ID
         value: VenthanVi/fracture-detection

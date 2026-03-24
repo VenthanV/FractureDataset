@@ -23,7 +23,8 @@ from fastapi.middleware.cors import CORSMiddleware
 # Resolve project root so imports from config / model work
 _API_DIR  = Path(__file__).parent
 _ROOT     = _API_DIR.parent
-sys.path.insert(0, str(_ROOT))
+sys.path.insert(0, str(_ROOT))   # für config, model, dataloader
+sys.path.insert(0, str(_API_DIR)) # für predictor, schemas
 
 from config import LOG_DIR
 import predictor as pred_module
