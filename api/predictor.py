@@ -60,9 +60,15 @@ class FracturePredictor:
     def __init__(self) -> None:
         best_ckpt = CHECKPOINT_DIR / "best_model.pth"
         if not best_ckpt.exists():
-            raise FileNotFoundError(
-                f"Checkpoint not found: {best_ckpt}\n"
-                "Run train.py first to generate a checkpoint."
+            import os
+            from huggingface_hub import hf_hub_download
+            hf_repo = os.getenv("HF_REPO_ID", "VenthanVi/fracture-detection")
+            print(f"[predictor] Checkpoint not found locally — downloading from {hf_repo}")
+            CHECKPOINT_DIR.mkdir(parents=True, exist_ok=True)
+            hf_hub_download(
+                repo_id=hf_repo,
+                filename="best_model.pth",
+                local_dir=str(CHECKPOINT_DIR),
             )
 
         self.model = build_model(pretrained=False)
