@@ -34,6 +34,7 @@ from .config import (
     LABEL_SMOOTHING, USE_SCHEDULER, HEAD_DROPOUT,
     P2_SCHEDULER, P2_PLATEAU_FACTOR, P2_PLATEAU_PATIENCE,
     MODEL_NAME, IMG_SIZE, GRAD_CLIP_MAX_NORM,
+    CLASS_WEIGHT_FRACTURE,
 )
 from .dataloader import get_dataloaders
 from .model import build_model, freeze_backbone, unfreeze_last_n
@@ -335,7 +336,14 @@ def train_model(cfg_override: dict | None = None) -> float:
     model = build_model(dropout1=dropout1, dropout2=dropout2)
     model = model.to(DEVICE)
 
-    criterion = nn.CrossEntropyLoss(label_smoothing=label_smoothing)
+    weight_fracture = _resolve(cfg, "CLASS_WEIGHT_FRACTURE", CLASS_WEIGHT_FRACTURE)
+    if weight_fracture != 1.0:
+        weight_tensor = torch.tensor([1.0, weight_fracture], dtype=torch.float32, device=DEVICE)
+        criterion = nn.CrossEntropyLoss(label_smoothing=label_smoothing, weight=weight_tensor)
+        if verbose:
+            print(f"[loss] Asymmetric class weights: normal=1.0  fracture={weight_fracture}", flush=True)
+    else:
+        criterion = nn.CrossEntropyLoss(label_smoothing=label_smoothing)
 
     # Checkpoint dir: isolated per Optuna trial to prevent overwrites
     ckpt_dir = CHECKPOINT_DIR / f"trial_{trial_num}" if trial_num is not None else CHECKPOINT_DIR

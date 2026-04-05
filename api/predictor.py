@@ -141,9 +141,14 @@ class FracturePredictor:
     # Public API
     # ------------------------------------------------------------------
 
-    def predict(self, image_bytes: bytes, threshold: float = 0.5) -> dict:
+    def predict(self, image_bytes: bytes, threshold: float = 0.5, n_tta: int = 1) -> dict:
         """
         Run inference on raw image bytes.
+
+        Args:
+            n_tta: Number of Test-Time Augmentation views (1 = off, 5 = recommended).
+                   TTA averages probabilities over horizontally flipped and rotated
+                   views. Improves stability ~1–2% AUC at ~N× inference cost.
 
         Returns:
             {
@@ -153,16 +158,22 @@ class FracturePredictor:
                 "gradcam_image":  "data:image/png;base64,...",
             }
         """
-        # Decode once; share the PIL image between inference and Grad-CAM
         pil_gray = Image.open(io.BytesIO(image_bytes)).convert("L")
         tensor   = self.transform(pil_gray).unsqueeze(0).to(self.device)  # (1, 3, H, W)
 
         with torch.no_grad():
-            logits = self.model(tensor)
-            prob   = float(torch.softmax(logits, dim=1)[0, 1].cpu())
+            if n_tta > 1:
+                from ml.dataloader import get_tta_transforms
+                tta_tfs  = get_tta_transforms(img_size=self.img_size, n_views=n_tta)
+                views    = torch.stack([t(pil_gray) for t in tta_tfs]).to(self.device)
+                logits   = self.model(views)
+                prob     = float(torch.softmax(logits, dim=1)[:, 1].mean().cpu())
+            else:
+                logits = self.model(tensor)
+                prob   = float(torch.softmax(logits, dim=1)[0, 1].cpu())
 
         label       = "fracture" if prob >= threshold else "normal"
-        gradcam_b64 = self._gradcam(tensor, pil_gray)
+        gradcam_b64 = self._gradcam(tensor, pil_gray)  # always from standard transform
 
         return {
             "label":          label,

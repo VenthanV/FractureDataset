@@ -15,6 +15,7 @@ import argparse
 import json
 import numpy as np
 import torch
+from PIL import Image
 import matplotlib
 matplotlib.use("Agg")   # non-interactive backend — safe for MPS and servers
 import matplotlib.pyplot as plt
@@ -25,8 +26,8 @@ from sklearn.metrics import (
     roc_curve,
 )
 
-from .config import DEVICE, SPLITS_CSV, CHECKPOINT_DIR, LOG_DIR
-from .dataloader import get_dataloaders
+from .config import DEVICE, SPLITS_CSV, CHECKPOINT_DIR, LOG_DIR, SENSITIVITY_TARGET_THRESHOLD
+from .dataloader import get_dataloaders, get_tta_transforms
 from .model import build_model
 
 
@@ -54,6 +55,36 @@ def run_inference(model, loader, device) -> dict:
         "probs":  torch.cat(all_probs).numpy(),
         "preds":  torch.cat(all_preds).numpy(),
     }
+
+
+def run_inference_tta(model, loader, device, n_tta: int = 5) -> dict:
+    """
+    Run inference with Test-Time Augmentation.
+
+    Averages probabilities over N augmented views per image.
+    Operates on raw PIL images from the dataset (bypasses loader transforms).
+    """
+    dataset        = loader.dataset
+    tta_transforms = get_tta_transforms(n_views=n_tta)
+
+    model.eval()
+    all_labels: list = []
+    all_probs:  list = []
+
+    with torch.no_grad():
+        for idx in range(len(dataset)):
+            pil   = Image.open(dataset.paths[idx]).convert("L")
+            label = dataset.labels[idx]
+            views = torch.stack([t(pil) for t in tta_transforms]).to(device)  # (N, 3, H, W)
+            logits = model(views)                                               # (N, 2)
+            prob   = float(torch.softmax(logits, dim=1)[:, 1].mean().cpu())
+            all_labels.append(label)
+            all_probs.append(prob)
+
+    probs_np  = np.array(all_probs)
+    labels_np = np.array(all_labels)
+    preds_np  = (probs_np >= 0.5).astype(int)
+    return {"labels": labels_np, "probs": probs_np, "preds": preds_np}
 
 
 def compute_metrics(results: dict) -> dict:
@@ -168,6 +199,13 @@ def main() -> None:
         action="store_true",
         help="Save all metrics to logs/eval_results.json (read by /model/stats API endpoint)",
     )
+    parser.add_argument(
+        "--tta",
+        type=int,
+        default=1,
+        metavar="N",
+        help="Number of Test-Time Augmentation views (1 = off, 5 = recommended)",
+    )
     args, _ = parser.parse_known_args()
 
     print(f"Device: {DEVICE}")
@@ -184,7 +222,11 @@ def main() -> None:
     print(f"Loaded checkpoint: {best_ckpt}")
 
     dataloaders = get_dataloaders(SPLITS_CSV)
-    results     = run_inference(model, dataloaders["test"], DEVICE)
+    if args.tta > 1:
+        print(f"Running TTA with {args.tta} views per image...")
+        results = run_inference_tta(model, dataloaders["test"], DEVICE, n_tta=args.tta)
+    else:
+        results = run_inference(model, dataloaders["test"], DEVICE)
     metrics     = compute_metrics(results)
 
     print("\n" + "=" * 55)
@@ -205,6 +247,16 @@ def main() -> None:
     )
     print(f"\nOptimal threshold (Youden's J): {opt_thresh:.3f}")
     print(f"  → sensitivity={opt_sens:.3f}  specificity={opt_spec:.3f}")
+
+    # Clinical operating point — prioritises sensitivity for fracture screening
+    clin_preds = (results["probs"] >= SENSITIVITY_TARGET_THRESHOLD).astype(int)
+    clin_cm    = confusion_matrix(results["labels"], clin_preds)
+    clin_tn, clin_fp, clin_fn, clin_tp = clin_cm.ravel()
+    clin_sens = clin_tp / (clin_tp + clin_fn) if (clin_tp + clin_fn) > 0 else 0.0
+    clin_spec = clin_tn / (clin_tn + clin_fp) if (clin_tn + clin_fp) > 0 else 0.0
+    print(f"\nClinical threshold (sensitivity-target={SENSITIVITY_TARGET_THRESHOLD:.2f}):")
+    print(f"  → sensitivity={clin_sens:.3f}  specificity={clin_spec:.3f}"
+          f"  (TP={clin_tp}  FP={clin_fp}  FN={clin_fn}  TN={clin_tn})")
 
     print("\nClassification report:")
     print(classification_report(

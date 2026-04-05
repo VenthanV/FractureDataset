@@ -21,6 +21,7 @@ from PIL import Image as PILImage
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import RedirectResponse
 
 # Resolve project root so imports from config / model work
 _API_DIR  = Path(__file__).parent
@@ -65,6 +66,11 @@ def _validate_threshold(threshold: float) -> None:
 
 
 # ── Endpoints ─────────────────────────────────────────────────────────────────
+
+@app.get("/", include_in_schema=False)
+async def root():
+    return RedirectResponse(url="/docs")
+
 
 @app.get("/health", response_model=HealthResponse)
 async def health():

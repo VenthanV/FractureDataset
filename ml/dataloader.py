@@ -2,9 +2,11 @@
 dataloader.py — PyTorch Dataset and DataLoader factory.
 """
 
+import functools
 from pathlib import Path
 from typing import Literal
 
+import numpy as np
 import pandas as pd
 import torch
 from torch.utils.data import Dataset, DataLoader
@@ -16,6 +18,7 @@ from .config import (
     NORMALIZE_MEAN, NORMALIZE_STD,
     AUG_HFLIP_PROB, AUG_ROTATION_DEG, AUG_BRIGHTNESS, AUG_CONTRAST,
     CROP_SCALE_MIN, EVAL_RESIZE_RATIO,
+    USE_MIXUP, MIXUP_ALPHA, EXCLUDE_PATHS_FILE,
 )
 
 
@@ -68,6 +71,67 @@ def get_val_transforms() -> transforms.Compose:
     ])
 
 
+def get_tta_transforms(img_size: int = IMG_SIZE, n_views: int = 5) -> list:
+    """
+    Return a list of N deterministic TTA (Test-Time Augmentation) transform pipelines.
+
+    Safe augmentations for X-rays (anatomical orientation preserved):
+        0: original (centre crop, no flip)
+        1: horizontal flip  (left/right forearm symmetry)
+        2: rotation +10°    (positioning variation)
+        3: rotation -10°
+        4: slight zoom-in   (95% resize → centre crop)
+
+    All views share Grayscale → Resize → (view-specific) → ToTensor → Normalize.
+    """
+    eval_size  = int(img_size * EVAL_RESIZE_RATIO)
+    base_pre   = [
+        transforms.Grayscale(num_output_channels=3),
+        transforms.Resize(eval_size),
+        transforms.CenterCrop(img_size),
+    ]
+    base_post  = [
+        transforms.ToTensor(),
+        transforms.Normalize(mean=NORMALIZE_MEAN, std=NORMALIZE_STD),
+    ]
+    view_augmentations = [
+        [],                                                           # 0: original
+        [transforms.RandomHorizontalFlip(p=1.0)],                    # 1: hflip
+        [transforms.RandomRotation(degrees=(10, 10))],               # 2: +10°
+        [transforms.RandomRotation(degrees=(-10, -10))],             # 3: -10°
+        [transforms.Resize(int(img_size * 0.95)),
+         transforms.CenterCrop(img_size)],                           # 4: slight zoom
+    ]
+    return [
+        transforms.Compose(base_pre + aug + base_post)
+        for aug in view_augmentations[:n_views]
+    ]
+
+
+def mixup_collate_fn(batch, alpha: float = 0.2):
+    """
+    MixUp collate function for the training DataLoader.
+
+    Randomly interpolates image pairs within a batch:
+        mixed_image = λ * img_a + (1 − λ) * img_b  where λ ~ Beta(alpha, alpha)
+
+    Labels remain integer class indices (primary label kept). CrossEntropyLoss
+    with label_smoothing handles soft-label regularisation implicitly.
+
+    Args:
+        batch: list of (tensor, label) from FractureDataset.__getitem__
+        alpha: Beta distribution parameter. 0.2 = mild mixing (recommended).
+               Increase to 0.4 for stronger regularisation.
+    """
+    images, labels = zip(*batch)
+    images = torch.stack(images)         # (B, C, H, W)
+    labels = torch.tensor(labels)        # (B,)
+    lam    = np.random.beta(alpha, alpha)
+    idx    = torch.randperm(images.size(0))
+    mixed  = lam * images + (1 - lam) * images[idx]
+    return mixed, labels
+
+
 class FractureDataset(Dataset):
     """
     PyTorch Dataset for binary fracture classification.
@@ -83,9 +147,23 @@ class FractureDataset(Dataset):
         splits_csv: Path,
         split: Literal["train", "val", "test"],
         transform: transforms.Compose,
+        exclude_paths: Path | None = None,
     ):
         df = pd.read_csv(splits_csv)
         df = df[df["split"] == split].reset_index(drop=True)
+
+        # Exclude quality-flagged images (only meaningful for train split)
+        if exclude_paths is not None and Path(exclude_paths).exists():
+            excluded = set(Path(exclude_paths).read_text().splitlines())
+            before   = len(df)
+            df       = df[~df["path"].isin(excluded)].reset_index(drop=True)
+            print(f"[dataset] {split}: excluded {before - len(df)} paths via {exclude_paths}")
+        elif "quality_flag" in df.columns and split == "train":
+            before = len(df)
+            df     = df[df["quality_flag"].fillna("") == ""].reset_index(drop=True)
+            if before > len(df):
+                print(f"[dataset] {split}: excluded {before - len(df)} quality-flagged images")
+
         assert len(df) > 0, f"No records found for split='{split}' in {splits_csv}"
         # Pre-extract to plain lists — avoids per-sample pandas iloc overhead in workers
         self.paths  = df["path"].tolist()
@@ -108,14 +186,24 @@ class FractureDataset(Dataset):
         return self._label_series.value_counts().to_dict()
 
 
-def get_dataloaders(splits_csv: Path = SPLITS_CSV) -> dict[str, DataLoader]:
+def get_dataloaders(
+    splits_csv: Path = SPLITS_CSV,
+    exclude_paths: Path | None = None,
+) -> dict[str, DataLoader]:
     """
     Build and return train / val / test DataLoaders.
+
+    Args:
+        exclude_paths: Optional path to a text file (one image path per line)
+                       listing images to exclude from the train split.
+                       Defaults to EXCLUDE_PATHS_FILE from config if it exists.
 
     Returns:
         dict with keys 'train', 'val', 'test'
     """
-    train_ds = FractureDataset(splits_csv, "train", get_train_transforms())
+    _exclude = exclude_paths if exclude_paths is not None else EXCLUDE_PATHS_FILE
+
+    train_ds = FractureDataset(splits_csv, "train", get_train_transforms(), exclude_paths=_exclude)
     val_ds   = FractureDataset(splits_csv, "val",   get_val_transforms())
     test_ds  = FractureDataset(splits_csv, "test",  get_val_transforms())
 
@@ -123,7 +211,8 @@ def get_dataloaders(splits_csv: Path = SPLITS_CSV) -> dict[str, DataLoader]:
     print(f"Val   : {len(val_ds):,} images  {val_ds.label_counts()}")
     print(f"Test  : {len(test_ds):,} images  {test_ds.label_counts()}")
 
-    persistent = NUM_WORKERS > 0
+    persistent  = NUM_WORKERS > 0
+    train_collate = functools.partial(mixup_collate_fn, alpha=MIXUP_ALPHA) if USE_MIXUP else None
 
     train_dl = DataLoader(
         train_ds,
@@ -133,6 +222,7 @@ def get_dataloaders(splits_csv: Path = SPLITS_CSV) -> dict[str, DataLoader]:
         pin_memory=PIN_MEMORY,
         persistent_workers=persistent,
         drop_last=True,   # avoids unstable BatchNorm on tiny last batch
+        collate_fn=train_collate,
     )
     val_dl = DataLoader(
         val_ds,
