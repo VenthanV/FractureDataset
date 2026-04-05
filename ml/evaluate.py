@@ -25,17 +25,17 @@ from sklearn.metrics import (
     roc_curve,
 )
 
-from config import DEVICE, SPLITS_CSV, CHECKPOINT_DIR, LOG_DIR
-from dataloader import get_dataloaders
-from model import build_model
+from .config import DEVICE, SPLITS_CSV, CHECKPOINT_DIR, LOG_DIR
+from .dataloader import get_dataloaders
+from .model import build_model
 
 
 def run_inference(model, loader, device) -> dict:
     """Run inference and collect labels, probabilities, and predictions."""
     model.eval()
-    all_labels: list[int]   = []
-    all_probs:  list[float] = []
-    all_preds:  list[int]   = []
+    all_labels: list[torch.Tensor] = []
+    all_probs:  list[torch.Tensor] = []
+    all_preds:  list[torch.Tensor] = []
 
     with torch.no_grad():
         for images, labels in loader:
@@ -44,14 +44,15 @@ def run_inference(model, loader, device) -> dict:
             probs  = torch.softmax(logits, dim=1)[:, 1]  # P(fracture)
             preds  = logits.argmax(dim=1)
 
-            all_labels.extend(labels.cpu().numpy())
-            all_probs.extend(probs.cpu().numpy())
-            all_preds.extend(preds.cpu().numpy())
+            # Accumulate tensors; convert to numpy once after the loop
+            all_labels.append(labels.cpu())
+            all_probs.append(probs.cpu())
+            all_preds.append(preds.cpu())
 
     return {
-        "labels": np.array(all_labels),
-        "probs":  np.array(all_probs),
-        "preds":  np.array(all_preds),
+        "labels": torch.cat(all_labels).numpy(),
+        "probs":  torch.cat(all_probs).numpy(),
+        "preds":  torch.cat(all_preds).numpy(),
     }
 
 

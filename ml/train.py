@@ -26,16 +26,17 @@ from torch.optim import AdamW
 from torch.optim.lr_scheduler import CosineAnnealingLR, ReduceLROnPlateau
 from sklearn.metrics import roc_auc_score
 
-from config import (
+from .config import (
     DEVICE, SPLITS_CSV, CHECKPOINT_DIR, LOG_DIR, RANDOM_SEED,
     PHASE1_EPOCHS, PHASE1_LR, PHASE1_WEIGHT_DECAY,
     PHASE2_EPOCHS, PHASE2_LR, PHASE2_WEIGHT_DECAY,
     UNFREEZE_LAST_N, EARLY_STOP_PATIENCE, EARLY_STOP_MIN_DELTA,
     LABEL_SMOOTHING, USE_SCHEDULER, HEAD_DROPOUT,
     P2_SCHEDULER, P2_PLATEAU_FACTOR, P2_PLATEAU_PATIENCE,
+    MODEL_NAME, IMG_SIZE, GRAD_CLIP_MAX_NORM,
 )
-from dataloader import get_dataloaders
-from model import build_model, freeze_backbone, unfreeze_last_n
+from .dataloader import get_dataloaders
+from .model import build_model, freeze_backbone, unfreeze_last_n
 
 
 def _resolve(cfg: dict, key: str, default):
@@ -79,31 +80,33 @@ def run_epoch(
     total_loss  = 0.0
     correct     = 0
     total       = 0
-    all_probs:  list[float] = []
-    all_labels: list[int]   = []
+    all_probs:  list[torch.Tensor] = []
+    all_labels: list[torch.Tensor] = []
 
     with torch.set_grad_enabled(is_train):
         for images, labels in tqdm(loader, desc=phase, leave=False):
             images = images.to(device)
             labels = labels.to(device)
 
+            if is_train:
+                optimizer.zero_grad(set_to_none=True)
+
             with torch.autocast(device, enabled=use_amp):
                 logits = model(images)             # (B, 2)
                 loss   = criterion(logits, labels)
 
             if is_train:
-                optimizer.zero_grad()
                 if scaler is not None:
                     scaler.scale(loss).backward()
                     scaler.unscale_(optimizer)
                     # Gradient clipping prevents exploding gradients when unfrozen
                     # layers receive backprop for the first time in Phase 2
-                    nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+                    nn.utils.clip_grad_norm_(model.parameters(), max_norm=GRAD_CLIP_MAX_NORM)
                     scaler.step(optimizer)
                     scaler.update()
                 else:
                     loss.backward()
-                    nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+                    nn.utils.clip_grad_norm_(model.parameters(), max_norm=GRAD_CLIP_MAX_NORM)
                     optimizer.step()
 
             # cast to float32 before softmax — safe for both fp16 (CUDA) and fp32 (MPS)
@@ -113,17 +116,34 @@ def run_epoch(
             total_loss += loss.item() * images.size(0)
             correct    += (preds == labels).sum().item()
             total      += images.size(0)
-            all_probs.extend(probs.detach().cpu().tolist())
-            all_labels.extend(labels.cpu().tolist())
+            # Accumulate tensors; convert to numpy once after the loop
+            all_probs.append(probs.detach().cpu())
+            all_labels.append(labels.cpu())
 
-    avg_loss = total_loss / total
-    accuracy = correct / total
+    avg_loss   = total_loss / total
+    accuracy   = correct / total
+    probs_np   = torch.cat(all_probs).numpy()
+    labels_np  = torch.cat(all_labels).numpy()
     try:
-        auc = roc_auc_score(all_labels, all_probs)
+        auc = roc_auc_score(labels_np, probs_np)
     except ValueError:
         auc = 0.5  # fallback if only one class present (shouldn't occur)
 
     return avg_loss, accuracy, auc
+
+
+def _save_checkpoint(path: Path, model: nn.Module) -> None:
+    """Save model weights wrapped with architecture metadata."""
+    torch.save(
+        {"state_dict": model.state_dict(), "model_name": MODEL_NAME, "img_size": IMG_SIZE},
+        path,
+    )
+
+
+def _load_state_dict(path: Path) -> dict:
+    """Load a checkpoint saved as either a plain state_dict or a wrapped dict."""
+    ck = torch.load(path, map_location=DEVICE)
+    return ck["state_dict"] if isinstance(ck, dict) and "state_dict" in ck else ck
 
 
 class EarlyStopping:
@@ -151,7 +171,7 @@ class EarlyStopping:
         if val_auc > self.best_auc + self.min_delta:
             self.best_auc = val_auc
             self.counter  = 0
-            torch.save(model.state_dict(), self.checkpoint_path)
+            _save_checkpoint(self.checkpoint_path, model)
             if self.verbose:
                 print(f"  [checkpoint] val AUC improved to {val_auc:.4f} — saved.", flush=True)
         else:
@@ -348,7 +368,7 @@ def train_model(cfg_override: dict | None = None) -> float:
             if not best_ckpt.exists():
                 raise FileNotFoundError(f"SKIP_PHASE1=1 but no checkpoint at {best_ckpt}")
             freeze_backbone(model)
-            model.load_state_dict(torch.load(best_ckpt, map_location=DEVICE))
+            model.load_state_dict(_load_state_dict(best_ckpt))
             p1_best_auc = 0.0
             if verbose:
                 print(f"SKIP_PHASE1: loaded checkpoint from {best_ckpt}", flush=True)
@@ -383,7 +403,7 @@ def train_model(cfg_override: dict | None = None) -> float:
 
         if not skip_phase1:
             # Start Phase 2 from best Phase 1 weights, not the final epoch
-            model.load_state_dict(torch.load(best_ckpt, map_location=DEVICE))
+            model.load_state_dict(_load_state_dict(best_ckpt))
             if verbose:
                 print(f"Loaded best Phase 1 checkpoint from {best_ckpt}", flush=True)
 
@@ -402,13 +422,13 @@ def train_model(cfg_override: dict | None = None) -> float:
             trial=trial, epoch_offset=p1_epochs, verbose=verbose,
         )
 
-    torch.save(model.state_dict(), last_ckpt)
+    _save_checkpoint(last_ckpt, model)
 
     # ── Kaggle: copy best checkpoint to /kaggle/working/ root ─────────────
     # Files in /kaggle/working/ appear in the notebook Output tab and can be
     # downloaded directly. Without this the .pth is buried in a subdirectory
     # and disappears when the session is restarted.
-    from config import _ON_KAGGLE, _KAGGLE_WORKING
+    from .config import _ON_KAGGLE, _KAGGLE_WORKING
     if _ON_KAGGLE and best_ckpt.exists():
         import shutil
         kaggle_out = _KAGGLE_WORKING / "best_model.pth"

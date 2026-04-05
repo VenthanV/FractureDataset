@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { isUncertain } from "../utils/prediction.js";
 
 const tableStyle = {
   width: "100%",
@@ -117,16 +118,23 @@ export default function BatchResultsTable({ results }) {
           </thead>
           <tbody>
             {sorted.map((r, i) => {
-              const isFracture = r.label === "fracture";
+              const isFracture  = r.label === "fracture";
+              const uncertain = isUncertain(r.probability, r.threshold_used);
               return (
-                <tr key={i} style={{ background: i % 2 === 0 ? "#fff" : "#f7fafc" }}>
+                <tr key={i} style={{ background: uncertain ? "#fffdf0" : i % 2 === 0 ? "#fff" : "#f7fafc" }}>
                   <td style={tdStyle}>{r.filename}</td>
                   <td style={tdStyle}>
                     <span style={badgeSmall(isFracture)}>
                       {isFracture ? "FRAKTUR" : "NORMAL"}
                     </span>
                   </td>
-                  <td style={tdStyle}>{(r.probability * 100).toFixed(1)}%</td>
+                  <td style={tdStyle}>
+                    {(r.probability * 100).toFixed(1)}%
+                    {uncertain && (
+                      <span title="Unsichere Vorhersage — manuelle Überprüfung empfohlen"
+                        style={{ marginLeft: 6, cursor: "help" }}>⚠</span>
+                    )}
+                  </td>
                   <td style={tdStyle}>{r.threshold_used.toFixed(2)}</td>
                 </tr>
               );

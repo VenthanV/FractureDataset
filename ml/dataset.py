@@ -14,7 +14,7 @@ from pathlib import Path
 import pandas as pd
 from sklearn.model_selection import train_test_split
 
-from config import DATA_ROOT, SPLITS_CSV, TRAIN_FRAC, VAL_FRAC, TEST_FRAC, RANDOM_SEED
+from .config import DATA_ROOT, SPLITS_CSV, TRAIN_FRAC, VAL_FRAC, TEST_FRAC, RANDOM_SEED
 
 # ── Category definitions (exact folder names) ──────────────────────────────
 CATEGORIES = {

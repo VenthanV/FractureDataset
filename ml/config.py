@@ -29,7 +29,7 @@ DATA_ROOT = Path(
     )
 )
 
-PROJECT_ROOT = Path(__file__).parent
+PROJECT_ROOT = Path(__file__).parent.parent  # ml/../ = project root
 
 # On Kaggle the script may live inside a read-only input dataset.
 # Always write to /kaggle/working/ so checkpoints survive the session
@@ -84,6 +84,16 @@ CROP_SCALE_MIN   = float(os.getenv("CROP_SCALE_MIN", "0.6"))
 NORMALIZE_MEAN = [0.485, 0.456, 0.406]
 NORMALIZE_STD  = [0.229, 0.224, 0.225]
 
+# ── Evaluation resize ratio (ImageNet standard: resize to 256, crop to 224) ─
+EVAL_RESIZE_RATIO = 256 / 224  # e.g. IMG_SIZE=224 → resize 256 → crop 224
+
+# ── Inference defaults ──────────────────────────────────────────────────────
+DEFAULT_THRESHOLD  = 0.5   # fallback when optimal threshold is unavailable
+UNCERTAINTY_MARGIN = 0.05  # ±5% around threshold → warn radiologist
+
+# ── Grad-CAM ────────────────────────────────────────────────────────────────
+GRADCAM_IMAGE_WEIGHT = 0.4  # fraction of original in overlay (lower = more CAM)
+
 # ── Loss ───────────────────────────────────────────────────────────────────
 LABEL_SMOOTHING = 0.1  # regularises predictions; improves calibration for medical use
 
@@ -102,10 +112,14 @@ UNFREEZE_LAST_N     = 2      # unfreeze last 2 block groups of the backbone
 EARLY_STOP_PATIENCE  = 10    # epochs without val AUC improvement before stopping
 EARLY_STOP_MIN_DELTA = 0.001 # minimum improvement threshold
 
-# ── Head Dropout ───────────────────────────────────────────────────────────
+# ── Head Architecture ──────────────────────────────────────────────────────
+HEAD_HIDDEN_DIM = 256   # intermediate linear layer size in the classification head
 # Applied to both dropout layers in the classification head.
 # 0.4 adds stronger regularisation; tune via HPO or HEAD_DROPOUT env var.
 HEAD_DROPOUT = float(os.getenv("HEAD_DROPOUT", "0.4"))
+
+# ── Gradient Clipping ───────────────────────────────────────────────────────
+GRAD_CLIP_MAX_NORM = 1.0  # prevents exploding gradients during Phase 2 fine-tuning
 
 # ── LR Scheduler ───────────────────────────────────────────────────────────
 # Phase 1 (head only): CosineAnnealingLR — smooth warm-up, fixed budget.

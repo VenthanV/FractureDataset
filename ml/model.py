@@ -6,7 +6,7 @@ import timm
 import torch
 import torch.nn as nn
 
-from config import MODEL_NAME, NUM_CLASSES
+from .config import MODEL_NAME, NUM_CLASSES, HEAD_HIDDEN_DIM
 
 
 def build_model(
@@ -65,11 +65,11 @@ class FractureClassifier(nn.Module):
         self.backbone = backbone
         self.head = nn.Sequential(
             nn.Dropout(p=dropout1),
-            nn.Linear(num_features, 256),
-            nn.BatchNorm1d(256),
+            nn.Linear(num_features, HEAD_HIDDEN_DIM),
+            nn.BatchNorm1d(HEAD_HIDDEN_DIM),
             nn.SiLU(),
             nn.Dropout(p=dropout2),
-            nn.Linear(256, NUM_CLASSES),
+            nn.Linear(HEAD_HIDDEN_DIM, NUM_CLASSES),
         )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:

@@ -1,0 +1,4 @@
+{
+  "model_name": "tf_efficientnetv2_m",
+  "img_size": 480
+}

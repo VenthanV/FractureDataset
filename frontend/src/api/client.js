@@ -1,4 +1,5 @@
 import axios from "axios";
+import { DEFAULT_THRESHOLD } from "../utils/prediction.js";
 
 const BASE = import.meta.env.VITE_API_URL || "http://localhost:8000";
 
@@ -7,7 +8,7 @@ const BASE = import.meta.env.VITE_API_URL || "http://localhost:8000";
  * @param {File}   file
  * @param {number} threshold  0.0 – 1.0
  */
-export async function predictSingle(file, threshold = 0.5) {
+export async function predictSingle(file, threshold = DEFAULT_THRESHOLD) {
   const form = new FormData();
   form.append("file", file);
   form.append("threshold", String(threshold));
@@ -22,7 +23,7 @@ export async function predictSingle(file, threshold = 0.5) {
  * @param {File[]} files
  * @param {number} threshold  0.0 – 1.0
  */
-export async function predictBatch(files, threshold = 0.5) {
+export async function predictBatch(files, threshold = DEFAULT_THRESHOLD) {
   const form = new FormData();
   files.forEach((f) => form.append("files", f));
   form.append("threshold", String(threshold));

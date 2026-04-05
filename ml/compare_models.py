@@ -32,12 +32,12 @@ from torch.optim import AdamW
 from sklearn.metrics import roc_auc_score
 import pandas as pd
 
-from config import (
+from .config import (
     DEVICE, SPLITS_CSV, RANDOM_SEED,
-    BATCH_SIZE, PHASE1_LR, PHASE1_WEIGHT_DECAY, LABEL_SMOOTHING,
+    BATCH_SIZE, PHASE1_LR, PHASE1_WEIGHT_DECAY, LABEL_SMOOTHING, LOG_DIR,
 )
-from dataloader import get_dataloaders
-from model import build_model, freeze_backbone
+from .dataloader import get_dataloaders
+from .model import build_model, freeze_backbone
 
 # ── Candidate model lists ──────────────────────────────────────────────────
 
@@ -241,7 +241,7 @@ def main() -> None:
     dataloaders = get_dataloaders(SPLITS_CSV)
     results = []
 
-    progress_path = Path(__file__).parent / "logs" / "compare_progress.txt"
+    progress_path = LOG_DIR / "compare_progress.txt"
     progress_path.parent.mkdir(parents=True, exist_ok=True)
 
     for i, model_name in enumerate(candidates, 1):
@@ -262,7 +262,7 @@ def main() -> None:
     print_results_table(results)
 
     # Save results CSV
-    out_path = Path(__file__).parent / "logs" / "model_comparison.csv"
+    out_path = LOG_DIR / "model_comparison.csv"
     out_path.parent.mkdir(parents=True, exist_ok=True)
     pd.DataFrame(results).to_csv(out_path, index=False)
     print(f"Results saved → {out_path}", flush=True)

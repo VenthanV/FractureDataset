@@ -26,8 +26,8 @@ import optuna
 from optuna.pruners import MedianPruner
 from optuna.samplers import TPESampler
 
-from config import CHECKPOINT_DIR, LOG_DIR
-from train import train_model
+from .config import CHECKPOINT_DIR, LOG_DIR
+from .train import train_model
 
 
 def objective(trial: optuna.Trial) -> float:

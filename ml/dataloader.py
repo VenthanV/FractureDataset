@@ -11,11 +11,11 @@ from torch.utils.data import Dataset, DataLoader
 from torchvision import transforms
 from PIL import Image
 
-from config import (
+from .config import (
     IMG_SIZE, BATCH_SIZE, NUM_WORKERS, PIN_MEMORY, SPLITS_CSV,
     NORMALIZE_MEAN, NORMALIZE_STD,
     AUG_HFLIP_PROB, AUG_ROTATION_DEG, AUG_BRIGHTNESS, AUG_CONTRAST,
-    CROP_SCALE_MIN,
+    CROP_SCALE_MIN, EVAL_RESIZE_RATIO,
 )
 
 
@@ -58,7 +58,7 @@ def get_val_transforms() -> transforms.Compose:
     ImageNet evaluation protocol. Avoids the minor distortion of squeezing
     a non-square image directly to IMG_SIZE × IMG_SIZE.
     """
-    eval_size = int(IMG_SIZE * 256 / 224)   # e.g. 256 for IMG_SIZE=224
+    eval_size = int(IMG_SIZE * EVAL_RESIZE_RATIO)
     return transforms.Compose([
         transforms.Grayscale(num_output_channels=3),
         transforms.Resize(eval_size),
@@ -85,24 +85,27 @@ class FractureDataset(Dataset):
         transform: transforms.Compose,
     ):
         df = pd.read_csv(splits_csv)
-        self.df = df[df["split"] == split].reset_index(drop=True)
+        df = df[df["split"] == split].reset_index(drop=True)
+        assert len(df) > 0, f"No records found for split='{split}' in {splits_csv}"
+        # Pre-extract to plain lists — avoids per-sample pandas iloc overhead in workers
+        self.paths  = df["path"].tolist()
+        self.labels = df["label_id"].tolist()
+        self._label_series = df["label"]  # kept only for label_counts()
         self.transform = transform
-        assert len(self.df) > 0, f"No records found for split='{split}' in {splits_csv}"
 
     def __len__(self) -> int:
-        return len(self.df)
+        return len(self.paths)
 
     def __getitem__(self, idx: int) -> tuple[torch.Tensor, int]:
-        row = self.df.iloc[idx]
         # convert("L") normalises to 8-bit grayscale regardless of source bit depth
-        image = Image.open(row["path"]).convert("L")
-        label = int(row["label_id"])  # 0=normal, 1=fracture
+        image = Image.open(self.paths[idx]).convert("L")
+        label = int(self.labels[idx])  # 0=normal, 1=fracture
         if self.transform:
             image = self.transform(image)
         return image, label
 
     def label_counts(self) -> dict:
-        return self.df["label"].value_counts().to_dict()
+        return self._label_series.value_counts().to_dict()
 
 
 def get_dataloaders(splits_csv: Path = SPLITS_CSV) -> dict[str, DataLoader]:

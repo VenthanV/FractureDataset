@@ -1,7 +1,9 @@
-import React, { useState, useRef, useEffect } from "react";
-import { predictBatch, getModelStats } from "../api/client.js";
-import ThresholdSlider   from "../components/ThresholdSlider.jsx";
-import BatchResultsTable from "../components/BatchResultsTable.jsx";
+import React, { useState, useRef } from "react";
+import { predictBatch } from "../api/client.js";
+import { useOptimalThreshold } from "../hooks/useOptimalThreshold.js";
+import { getErrorMessage } from "../utils/prediction.js";
+import ThresholdStatusBar from "../components/ThresholdStatusBar.jsx";
+import BatchResultsTable  from "../components/BatchResultsTable.jsx";
 
 const headingStyle = {
   fontSize: "1.4rem",
@@ -55,39 +57,15 @@ const spinnerStyle = {
   verticalAlign: "middle",
 };
 
-const debugToggleStyle = {
-  display: "inline-flex",
-  alignItems: "center",
-  gap: "0.35rem",
-  fontSize: "0.78rem",
-  color: "#718096",
-  cursor: "pointer",
-  border: "1px solid #e2e8f0",
-  borderRadius: 6,
-  padding: "0.25rem 0.6rem",
-  background: "#f7fafc",
-  userSelect: "none",
-};
 
 export default function BatchUpload() {
-  const [threshold, setThreshold]         = useState(0.5);
-  const [optimalThresh, setOptimalThresh]  = useState(null);
-  const [debugOpen, setDebugOpen]          = useState(false);
-  const [files, setFiles]                  = useState([]);
-  const [results, setResults]              = useState([]);
-  const [loading, setLoading]              = useState(false);
-  const [error, setError]                  = useState(null);
+  const { threshold, setThreshold, optimalThresh, isOptimal } = useOptimalThreshold();
+  const [debugOpen, setDebugOpen] = useState(false);
+  const [files, setFiles]         = useState([]);
+  const [results, setResults]     = useState([]);
+  const [loading, setLoading]     = useState(false);
+  const [error, setError]         = useState(null);
   const inputRef = useRef(null);
-
-  useEffect(() => {
-    getModelStats()
-      .then((stats) => {
-        const t = stats.optimal_threshold ?? 0.5;
-        setOptimalThresh(t);
-        setThreshold(t);
-      })
-      .catch(() => {});
-  }, []);
 
   function handleFiles(fileList) {
     setFiles(Array.from(fileList));
@@ -103,13 +81,11 @@ export default function BatchUpload() {
       const res = await predictBatch(files, threshold);
       setResults(res);
     } catch (err) {
-      setError(err?.response?.data?.detail || err.message || "Unbekannter Fehler");
+      setError(getErrorMessage(err));
     } finally {
       setLoading(false);
     }
   }
-
-  const isOptimal = optimalThresh !== null && Math.abs(threshold - optimalThresh) < 0.001;
 
   const summary = results.length
     ? {
@@ -121,56 +97,17 @@ export default function BatchUpload() {
 
   return (
     <div>
-      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
       <h1 style={headingStyle}>Batch-Analyse</h1>
 
-      {/* Threshold status bar */}
-      <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", flexWrap: "wrap" }}>
-        <span style={{ fontSize: "0.88rem", color: "#4a5568" }}>
-          Entscheidungsschwelle:{" "}
-          <strong style={{ color: "#1a365d" }}>{threshold.toFixed(3)}</strong>
-          {isOptimal && (
-            <span style={{
-              marginLeft: 6, fontSize: "0.75rem", background: "#c6f6d5",
-              color: "#276749", borderRadius: 10, padding: "1px 7px", fontWeight: 600,
-            }}>
-              optimal (Youden's J)
-            </span>
-          )}
-        </span>
-
-        <button style={debugToggleStyle} onClick={() => setDebugOpen((o) => !o)}>
-          ⚙ Debug {debugOpen ? "▲" : "▼"}
-        </button>
-
-        {!isOptimal && optimalThresh !== null && (
-          <button
-            style={{ ...debugToggleStyle, color: "#2b6cb0", borderColor: "#bee3f8", background: "#ebf4ff" }}
-            onClick={() => { setThreshold(optimalThresh); setResults([]); }}
-          >
-            ↺ Auf {optimalThresh.toFixed(3)} zurücksetzen
-          </button>
-        )}
-      </div>
-
-      {debugOpen && (
-        <div style={{
-          padding: "0.75rem", background: "#f7fafc",
-          border: "1px solid #e2e8f0", borderRadius: 8,
-          marginTop: "0.75rem",
-        }}>
-          <ThresholdSlider
-            value={threshold}
-            onChange={(v) => { setThreshold(v); setResults([]); }}
-          />
-          {optimalThresh !== null && (
-            <p style={{ fontSize: "0.75rem", color: "#718096", marginTop: "0.4rem", marginBottom: 0 }}>
-              Optimaler Schwellenwert (Youden's J): <strong>{optimalThresh.toFixed(3)}</strong>
-              {" "}— niedrigerer Wert = mehr Sensitivität, höherer = mehr Spezifität
-            </p>
-          )}
-        </div>
-      )}
+      <ThresholdStatusBar
+        threshold={threshold}
+        optimalThresh={optimalThresh}
+        isOptimal={isOptimal}
+        debugOpen={debugOpen}
+        onDebugToggle={() => setDebugOpen((o) => !o)}
+        onThresholdChange={(v) => { setThreshold(v); setResults([]); }}
+        onReset={() => { setThreshold(optimalThresh); setResults([]); }}
+      />
 
       <div
         style={dropZoneStyle}

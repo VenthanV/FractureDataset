@@ -1,4 +1,5 @@
 import React from "react";
+import { isUncertain } from "../utils/prediction.js";
 
 const cardStyle = {
   borderRadius: 10,
@@ -54,8 +55,9 @@ const metaStyle = {
 export default function PredictionCard({ result, filename }) {
   if (!result) return null;
 
-  const isFracture = result.label === "fracture";
-  const pct        = (result.probability * 100).toFixed(1);
+  const isFracture  = result.label === "fracture";
+  const pct         = (result.probability * 100).toFixed(1);
+  const uncertain   = isUncertain(result.probability, result.threshold_used);
 
   return (
     <div style={cardStyle}>
@@ -71,6 +73,30 @@ export default function PredictionCard({ result, filename }) {
           <div style={barFillStyle(result.probability, isFracture)} />
         </div>
       </div>
+
+      {uncertain && (
+        <div style={{
+          marginTop: "0.75rem",
+          padding: "0.55rem 0.85rem",
+          borderRadius: 8,
+          background: "#fffbeb",
+          border: "1px solid #f6e05e",
+          display: "flex",
+          alignItems: "flex-start",
+          gap: "0.5rem",
+        }}>
+          <span style={{ fontSize: "1rem", lineHeight: 1.4 }}>⚠</span>
+          <div>
+            <div style={{ fontSize: "0.82rem", fontWeight: 700, color: "#744210" }}>
+              Unsichere Vorhersage
+            </div>
+            <div style={{ fontSize: "0.78rem", color: "#92400e", marginTop: 2 }}>
+              P(Fraktur) liegt innerhalb von ±5% des Schwellenwerts ({result.threshold_used.toFixed(3)}).
+              Manuelle Überprüfung durch Radiologen empfohlen.
+            </div>
+          </div>
+        </div>
+      )}
 
       <div style={metaStyle}>
         Schwellenwert: {result.threshold_used.toFixed(2)}
